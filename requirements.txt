@@ -1,0 +1,7 @@
+streamlit==1.38.0
+pandas==2.2.2
+numpy==1.26.4
+yfinance==0.2.43
+plotly==5.23.0
+kiteconnect==5.0.1
+dhanhq>=0.0.1
