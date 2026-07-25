@@ -1,0 +1,20 @@
+[
+  {
+    "timestamp": "2026-07-25T13:20:26.078057",
+    "duration_seconds": 34.356894,
+    "symbols_scanned": 143,
+    "signals_found": 0,
+    "failed_symbols": 0,
+    "preset": "moderate",
+    "timeframe": "15m"
+  },
+  {
+    "timestamp": "2026-07-25T13:21:20.244462",
+    "duration_seconds": 125.314307,
+    "symbols_scanned": 718,
+    "signals_found": 0,
+    "failed_symbols": 0,
+    "preset": "aggressive",
+    "timeframe": "15m"
+  }
+]

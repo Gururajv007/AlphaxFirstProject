@@ -1,12 +1,14 @@
 {
   "broker": "dhan",
   "api_key": "1109176427",
-  "api_secret": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzgzNjE2NTA1LCJpYXQiOjE3ODM1MzAxMDUsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTA5MTc2NDI3In0.CQcLHwCHgA08Wa-QBZwMAAKY9JmGSmCip1p09rLBpk8vApEPJJ5hF2eD8X_Zu_W_3NXxHF22GLbSPxrleBTPXg",
-  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzgzNjE2NTA1LCJpYXQiOjE3ODM1MzAxMDUsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTA5MTc2NDI3In0.CQcLHwCHgA08Wa-QBZwMAAKY9JmGSmCip1p09rLBpk8vApEPJJ5hF2eD8X_Zu_W_3NXxHF22GLbSPxrleBTPXg",
+  "api_secret": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJkaGFuIiwicGFydG5lcklkIjoiIiwiZXhwIjoxNzg1MDUyNzk4LCJpYXQiOjE3ODQ5NjYzOTgsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvb2tVcmwiOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTA5MTc2NDI3In0.ejoe8y5tDEaIOyd37Sk0v_bAQHfi5U4LvmQEEPrYg6_8EbTLLOK4BZwkqVHm0XQ_i8LfsWwKMWDIn6hgsOOx5Q",
+  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJwX2lwIjoiIiwic19pcCI6IiIsImlzcyI6ImRoYW4iLCJwYXJ0bmVySWQiOiIiLCJleHAiOjE3ODM4NzIyMjksImlhdCI6MTc4Mzc4NTgyOSwidG9rZW5Db25zdW1lclR5cGUiOiJTRUxGIiwid2ViaG9va1VybCI6Imh0dHA6Ly9sb2NhbGhvc3Q6ODUwMi8iLCJkaGFuQ2xpZW50SWQiOiIxMTA5MTc2NDI3In0.iXbtQmjvC8-cExt8wZmqvo9RaxgvEunHCj_FEpTBu61c4gK8gImnSQr-5dEid0oUBweZtz-XmpfXD4b7GyfHlg",
   "capital": 100000.0,
   "risk_per_trade_pct": 1.25,
   "max_daily_loss_pct": 2.5,
   "min_risk_reward": 3.0,
   "paper_trading_only": true,
-  "trading_mode": "live"
+  "trading_mode": "live",
+  "adx_threshold": 25.0,
+  "volume_ratio_min": 1.1
 }

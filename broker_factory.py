@@ -1,8 +1,15 @@
 """
 broker_factory.py
 -----------------
-Factory for creating broker instances based on configuration.
-Manages broker selection and instantiation.
+Dhan-only broker factory for the NSE AI Trading Platform.
+
+This module is streamlined to support only Dhan broker,
+providing the most comprehensive API for NSE trading with:
+- Real-time market data
+- Order management
+- Position tracking
+- GTT (Good Till Triggered) orders
+- Margin management
 """
 
 from typing import Optional
@@ -10,63 +17,49 @@ from broker_interface import BrokerInterface
 
 
 def create_broker(
-    broker_type: str,
+    broker_type: str = "dhan",
     api_key: str = "",
     api_secret: str = "",
     access_token: str = "",
 ) -> BrokerInterface:
     """
-    Factory function to create the appropriate broker instance.
-    
+    Factory function to create broker instance.
+
+    Currently only supports Dhan broker.
+
     Args:
-        broker_type: Broker identifier ('zerodha_kite', 'upstox', 'angel_one', 'fyers', 'dhan')
-        api_key: Broker API key
-        api_secret: Broker API secret
-        access_token: Broker access token (for authenticated calls)
-    
+        broker_type: Broker identifier (currently only 'dhan' supported)
+        api_key: Dhan Client ID
+        api_secret: Dhan API Secret
+        access_token: Dhan Access Token
+
     Returns:
-        An instance of the requested broker implementation
-    
+        DhanBroker instance
+
     Raises:
-        ValueError: If broker_type is not recognized
+        ValueError: If broker_type is not 'dhan'
     """
-    
-    broker_type = broker_type.lower().strip()
-    
-    if broker_type == "zerodha_kite" or broker_type == "zerodha":
-        from broker_kite import KiteBroker
-        return KiteBroker(api_key=api_key, api_secret=api_secret, access_token=access_token)
-    
-    elif broker_type == "upstox":
-        from broker_upstox import UpstoxBroker
-        return UpstoxBroker(api_key=api_key, access_token=access_token)
-    
-    elif broker_type == "angel_one" or broker_type == "angel":
-        from broker_angel import AngelOneBroker
-        return AngelOneBroker(api_key=api_key, client_code=api_secret, access_token=access_token)
-    
-    elif broker_type == "fyers":
-        from broker_fyers import FyersBroker
-        return FyersBroker(api_key=api_key, access_token=access_token)
-    
-    elif broker_type == "dhan":
+
+    # Force Dhan only - ignore other broker types
+    broker_type = "dhan"
+
+    if broker_type == "dhan":
         from broker_dhan import DhanBroker
-        return DhanBroker(api_key=api_key, access_token=access_token, api_secret=api_secret)
-    
+        return DhanBroker(
+            api_key=api_key,
+            access_token=access_token,
+            api_secret=api_secret
+        )
     else:
         raise ValueError(
-            f"Unknown broker type: {broker_type}. "
-            f"Supported: zerodha_kite, upstox, angel_one, fyers, dhan"
+            f"Only Dhan broker is supported. "
+            f"Please configure your Dhan credentials in Settings."
         )
 
 
-# List of supported brokers for UI dropdown
+# Dhan-only broker configuration
 SUPPORTED_BROKERS = [
-    ("zerodha_kite", "🦓 Zerodha (Kite Connect)"),
-    ("upstox", "📈 Upstox"),
-    ("angel_one", "😇 Angel One"),
-    ("fyers", "⚡ Fyers"),
-    ("dhan", "💰 Dhan"),
+    ("dhan", "💰 Dhan (India's Fastest Growing Broker)"),
 ]
 
 
@@ -78,3 +71,8 @@ def get_broker_display_names() -> dict:
 def get_broker_list() -> list:
     """Returns list of supported broker types."""
     return [code for code, _ in SUPPORTED_BROKERS]
+
+
+def is_dhan_configured(api_key: str, access_token: str) -> bool:
+    """Check if Dhan credentials are properly configured."""
+    return bool(api_key and access_token)

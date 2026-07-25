@@ -12,6 +12,7 @@ may want to encrypt this file or use OS keychain storage instead.
 
 import json
 import os
+from typing import Optional
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
 
@@ -53,7 +54,7 @@ def save_config(config: dict) -> None:
         json.dump(config, f, indent=2)
 
 
-def normalize_trading_mode(mode: str | None, default: str = "paper") -> str:
+def normalize_trading_mode(mode: Optional[str], default: str = "paper") -> str:
     """Normalize a runtime or persisted trading mode string to paper/live."""
     value = (mode or default).strip().lower().replace("-", " ").replace("_", " ")
     value = " ".join(value.split())
@@ -64,12 +65,12 @@ def normalize_trading_mode(mode: str | None, default: str = "paper") -> str:
     return default
 
 
-def get_trading_mode_label(mode: str | None) -> str:
+def get_trading_mode_label(mode: Optional[str]) -> str:
     """Return a display label for the trading mode."""
     return "Paper Trade" if normalize_trading_mode(mode) == "paper" else "Live Trade"
 
 
-def is_broker_connected(config: dict, runtime_config: dict | None = None) -> bool:
+def is_broker_connected(config: dict, runtime_config: Optional[dict] = None) -> bool:
     """Return True once the app has a usable broker API key and access token."""
     effective_config = dict(config or {})
     if runtime_config:

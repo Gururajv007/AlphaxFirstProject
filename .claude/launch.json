@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "trading-app",
+      "runtimeExecutable": "/Users/bindu/Downloads/trading_app/.venv/bin/streamlit",
+      "runtimeArgs": ["run", "app.py", "--server.headless", "true"],
+      "port": 8501,
+      "autoPort": true
+    }
+  ]
+}
