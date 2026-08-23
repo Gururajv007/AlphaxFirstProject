@@ -7,11 +7,11 @@ Support multiple brokers (Zerodha, Upstox, Angel One, Fyers, Dhan) through a uni
 
 | Broker | Code | Status | Location |
 |--------|------|--------|----------|
-| 🦓 Zerodha (Kite Connect) | `zerodha_kite` | ✅ Implemented | [broker_kite.py](broker_kite.py) |
-| 📈 Upstox | `upstox` | 🔄 Stub | [broker_upstox.py](broker_upstox.py) |
-| 😇 Angel One | `angel_one` | 🔄 Stub | [broker_angel.py](broker_angel.py) |
-| ⚡ Fyers | `fyers` | 🔄 Stub | [broker_fyers.py](broker_fyers.py) |
-| 💰 Dhan | `dhan` | 🔄 Stub | [broker_dhan.py](broker_dhan.py) |
+| 💰 Dhan | `dhan` | ✅ Implemented | [broker_dhan.py](broker_dhan.py) |
+| 🦓 Zerodha (Kite Connect) | `zerodha_kite` | 🔄 Stub | `broker_kite.py` |
+| 📈 Upstox | `upstox` | 🔄 Stub | `broker_upstox.py` |
+| 😇 Angel One | `angel_one` | 🔄 Stub | `broker_angel.py` |
+| ⚡ Fyers | `fyers` | 🔄 Stub | `broker_fyers.py` |
 
 ## Architecture
 
@@ -61,14 +61,15 @@ print(get_broker_list())  # ['zerodha_kite', 'upstox', 'angel_one', 'fyers', 'dh
 
 ### 3. **Broker Implementations**
 
-#### Zerodha (KiteBroker)
+#### Dhan (DhanBroker)
 - **Status**: ✅ Full implementation with all methods
-- **SDK**: `kiteconnect` (pip install kiteconnect)
-- **Authentication**: OAuth flow with daily access tokens
-- **Products Supported**: CNC (swing), MIS (intraday)
-- **GTT Support**: ✅ Yes (server-side stop-loss)
+- **SDK**: `dhanhq` (pip install dhanhq)
+- **Authentication**: Dhan client ID + app secret login flow, daily JWT access tokens (auto-detected expiry)
+- **Products Supported**: CNC (swing), INTRADAY (intraday; legacy `MIS`/`INTRA` values map to `INTRADAY`)
+- **GTT Support**: ✅ Yes — server-side stop-loss via the Dhan Forever Order API (`place_gtt_stop_loss` returns a `GTTOrder`)
+- **Security Master**: symbol→security-id map downloaded/cached from Dhan's scrip-master CSV (`dhan_security_list.csv`, refreshed weekly, stale flag surfaced in the UI)
 
-#### Upstox, Angel One, Fyers, Dhan
+#### Zerodha, Upstox, Angel One, Fyers
 - **Status**: 🔄 Stub implementations (all methods raise NotImplementedError)
 - **How to Complete**: Replace `raise NotImplementedError()` with actual SDK calls
 - **Each broker has**:
@@ -101,11 +102,11 @@ DEFAULT_CONFIG = {
 trading_app/
 ├── broker_interface.py          # Abstract base class + data classes
 ├── broker_factory.py            # Factory for creating brokers
-├── broker_kite.py               # ✅ Zerodha (Kite Connect)
+├── broker_dhan.py               # ✅ Dhan (implemented)
+├── broker_kite.py               # 🔄 Zerodha stub
 ├── broker_upstox.py             # 🔄 Upstox stub
 ├── broker_angel.py              # 🔄 Angel One stub
 ├── broker_fyers.py              # 🔄 Fyers stub
-├── broker_dhan.py               # 🔄 Dhan stub
 ├── app.py                       # Updated to use factory
 ├── config.py                    # Stores broker selection
 └── ...
@@ -177,17 +178,17 @@ The app automatically works without any changes!
 - Abstract interface definition (`BrokerInterface`)
 - Normalized data classes (Position, Order, GTTOrder)
 - Broker factory with validation
-- Zerodha implementation with all 9 methods
+- Dhan implementation (`DhanBroker`) with all interface methods
 - App.py integration with broker factory
 - Settings tab broker selection dropdown
 - Config system for broker persistence
-- All 5 stubs created with TODO placeholders
+- Stubs created with TODO placeholders for other brokers
 
 ### 🔄 In Progress / TODO
 - Implement Upstox methods
 - Implement Angel One methods
 - Implement Fyers methods
-- Implement Dhan methods
+- Implement Zerodha methods
 - Test broker switching in live trading
 - Add broker-specific error handling
 - Document broker-specific quirks (e.g., product types, order types)
@@ -197,8 +198,8 @@ The app automatically works without any changes!
 **Phase 1: Core Architecture** ✅
 - [x] BrokerInterface abstract class
 - [x] BrokerFactory for instantiation
-- [x] Zerodha full implementation
-- [x] Stub implementations for 4 brokers
+- [x] Dhan full implementation
+- [x] Stub implementations for other brokers
 - [x] Config system integration
 - [x] App.py factory integration
 
@@ -220,6 +221,13 @@ The app automatically works without any changes!
 - Multi-account trading
 
 ## Broker-Specific Notes
+
+### Dhan
+- **Unique Identifiers**: Dhan `security_id` resolved from the scrip-master CSV (`SEM_TRADING_SYMBOL` + `SEM_EXM_EXCH_ID`/`SEM_SEGMENT`)
+- **Products**: CNC (delivery), INTRADAY (intraday), MARGIN, MTF, CO, BO — legacy `MIS`/`INTRA` map to `INTRADAY`
+- **GTT Availability**: ✅ Supported via the Forever Order API (server-side stop-loss)
+- **Error Codes**: DH-901 (bad auth), DH-904 (rate limit, retryable), DH-905 (input), DH-909 (server, retryable); typed `DhanAPIError` raised
+- **Notes**: Daily JWT access tokens; historical/intraday endpoints need the Data-API subscription; static IP must be registered
 
 ### Zerodha (Kite Connect)
 - **Unique Identifiers**: Uses `exchange:symbol` format (e.g., "NSE:RELIANCE")
@@ -244,12 +252,6 @@ The app automatically works without any changes!
 - **Products**: TBD
 - **GTT Availability**: Check if available
 - **Notes**: Advanced options trading available
-
-### Dhan
-- **Unique Identifiers**: TBD
-- **Products**: TBD
-- **GTT Availability**: Check if available
-- **Notes**: Growing platform with good API support
 
 ## Example: Trading with Different Brokers
 
@@ -291,6 +293,6 @@ broker.place_gtt_stop_loss(symbol, qty=1, trigger_price=ltp*0.97)
 
 ---
 
-**Last Updated**: 2026-06-21  
-**Architecture Status**: Production-ready for Zerodha, stubs ready for other brokers  
+**Last Updated**: 2026-08-23  
+**Architecture Status**: Production-ready for Dhan, stubs for other brokers  
 **Next Priority**: Implement Upstox methods

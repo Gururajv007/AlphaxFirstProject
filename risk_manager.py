@@ -107,6 +107,7 @@ class DailyLossTracker:
     capital: float
     max_daily_loss_pct: float
     realized_pnl_today: float = 0.0
+    _latched: bool = field(default=False, init=False, repr=False)
 
     @property
     def max_loss_amount(self) -> float:
@@ -114,15 +115,20 @@ class DailyLossTracker:
 
     @property
     def is_tripped(self) -> bool:
-        return self.realized_pnl_today <= -abs(self.max_loss_amount)
+        # Latch once tripped: a later profit must not re-open entries for the
+        # rest of the day (see docstring). Reset happens on the next morning.
+        return self._latched or self.realized_pnl_today <= -abs(self.max_loss_amount)
 
     def record_trade_pnl(self, pnl: float) -> None:
         """Call this every time a trade closes with its profit or loss."""
         self.realized_pnl_today += pnl
+        if self.realized_pnl_today <= -abs(self.max_loss_amount):
+            self._latched = True
 
     def reset(self) -> None:
         """Call this at the start of each new trading day."""
         self.realized_pnl_today = 0.0
+        self._latched = False
 
     def status_text(self) -> str:
         if self.is_tripped:

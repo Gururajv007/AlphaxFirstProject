@@ -324,8 +324,10 @@ class StockScreener:
         self,
         universe: Optional[StockUniverse] = None,
         data_cache_dir: str = "./screener_data/cache",
+        broker=None,
     ):
         self.universe = universe or StockUniverse(data_cache_dir)
+        self.broker = broker
 
         # Data cache
         self.data_cache_dir = data_cache_dir
@@ -381,7 +383,7 @@ class StockScreener:
         index_df = None
         if use_relative_strength:
             try:
-                index_df = data_feed.get_historical(data_feed.NIFTY50_SYMBOL, interval=timeframe)
+                index_df = data_feed.get_historical(data_feed.NIFTY50_SYMBOL, interval=timeframe, broker=self.broker)
             except Exception as e:
                 print(f"Warning: Could not fetch index data: {e}")
 
@@ -521,7 +523,7 @@ class StockScreener:
 
         # Fetch fresh data
         try:
-            df = data_feed.get_historical(symbol, interval=timeframe)
+            df = data_feed.get_historical(symbol, interval=timeframe, broker=self.broker)
             if df is not None and not df.empty:
                 # Save to cache
                 try:

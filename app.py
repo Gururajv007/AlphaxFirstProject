@@ -85,6 +85,17 @@ if "consecutive_loss_tracker" not in st.session_state:
 if "audit_log" not in st.session_state:
     st.session_state.audit_log = TradeAuditLog()
 
+if "last_reset_date" not in st.session_state:
+    st.session_state.last_reset_date = str(dt.date.today())
+
+# Daily reset of risk trackers on the new trading day (kill-switch latch and
+# daily realized P&L must not bleed across days).
+if st.session_state.last_reset_date != str(dt.date.today()):
+    st.session_state.daily_loss_tracker.reset()
+    st.session_state.consecutive_loss_tracker.reset()
+    st.session_state.audit_log.log_action("DAILY_RESET", reason="New trading day")
+    st.session_state.last_reset_date = str(dt.date.today())
+
 if "bot_status" not in st.session_state:
     st.session_state.bot_status = "STOPPED"  # RUNNING, PAUSED, STOPPED
 
@@ -96,6 +107,24 @@ def get_strategy_params() -> StrategyParams:
     s = st.session_state
     return StrategyParams(
         min_risk_reward=s.config["min_risk_reward"],
+    )
+
+
+def get_broker():
+    """Build a connected broker from current config, or None if not connected."""
+    runtime_config = {
+        "api_key": st.session_state.config.get("api_key", ""),
+        "api_secret": st.session_state.config.get("api_secret", ""),
+        "access_token": st.session_state.config.get("access_token", ""),
+    }
+    if not cfg.is_broker_connected(st.session_state.config, runtime_config):
+        return None
+    from broker_factory import create_broker
+    return create_broker(
+        broker_type=st.session_state.config.get("broker", "zerodha_kite"),
+        api_key=runtime_config.get("api_key", ""),
+        api_secret=runtime_config.get("api_secret", ""),
+        access_token=runtime_config.get("access_token", ""),
     )
 
 
@@ -205,13 +234,13 @@ with tab_backtest:
     if st.button("▶️ Run Backtest", type="primary"):
         with st.spinner("Fetching data and running backtest..."):
             try:
-                df = data_feed.get_historical(symbol, interval=timeframe)
+                df = data_feed.get_historical(symbol, interval=timeframe, broker=get_broker())
                 if df.empty:
                     st.error("No data returned. Check the symbol and try again.")
                 else:
                     index_df = None
                     if use_index_filter:
-                        index_df = data_feed.get_historical(data_feed.NIFTY50_SYMBOL, interval=timeframe)
+                        index_df = data_feed.get_historical(data_feed.NIFTY50_SYMBOL, interval=timeframe, broker=get_broker())
 
                     params = get_strategy_params()
                     params.use_relative_strength = use_index_filter
@@ -270,12 +299,12 @@ with tab_paper:
     if st.button("🔍 Scan for signals"):
         watchlist = [s.strip() for s in watchlist_input.split(",") if s.strip()]
         params = get_strategy_params()
-        index_df = data_feed.get_historical(data_feed.NIFTY50_SYMBOL, interval=pt_timeframe)
+        index_df = data_feed.get_historical(data_feed.NIFTY50_SYMBOL, interval=pt_timeframe, broker=get_broker())
 
         results = []
         for sym in watchlist:
             try:
-                df = data_feed.get_historical(sym, interval=pt_timeframe)
+                df = data_feed.get_historical(sym, interval=pt_timeframe, broker=get_broker())
                 if df.empty:
                     continue
                 sig_df = generate_signals(df, params, index_df)
@@ -326,7 +355,7 @@ with tab_paper:
     current_prices = {}
     for sym in pf.positions:
         try:
-            current_prices[sym] = data_feed.get_latest_price(sym)
+            current_prices[sym] = data_feed.get_latest_price(sym, broker=get_broker())
         except Exception:
             pass
 
@@ -395,13 +424,7 @@ with tab_live:
     balance_value = None
     if connected:
         try:
-            from broker_factory import create_broker
-            broker = create_broker(
-                broker_type=st.session_state.config.get("broker", "zerodha_kite"),
-                api_key=runtime_config.get("api_key", ""),
-                api_secret=runtime_config.get("api_secret", ""),
-                access_token=runtime_config.get("access_token", ""),
-            )
+            broker = get_broker()
             margins = broker.get_margins()
             if isinstance(margins, dict):
                 balance_value = None
@@ -443,6 +466,17 @@ with tab_live:
         except Exception as exc:
             st.caption(f"Balance refresh skipped: {exc}")
 
+    if connected:
+        try:
+            broker = get_broker()
+            if broker is not None and hasattr(broker, "is_security_list_stale") and broker.is_security_list_stale():
+                st.warning(
+                    "Dhan security list (scrip master) is stale or could not be refreshed. "
+                    "Symbol→security_id resolution may fail or be outdated. Re-run once network access is available."
+                )
+        except Exception:
+            pass
+
     drawdown_status = st.session_state.drawdown_tracker.get_status(current_capital)
     bsc3.metric("Available Capital", f"₹{current_capital:,.0f}")
     if balance_value is not None:
@@ -483,7 +517,15 @@ with tab_live:
     if close_all_clicked:
         if st.checkbox("Confirm: Close ALL open positions immediately?", key="confirm_close_all"):
             st.session_state.audit_log.log_action("CLOSE_ALL", reason="Manual emergency close")
-            st.success("All positions would be closed (live broker integration needed)")
+            broker = get_broker()
+            if broker is not None and hasattr(broker, "exit_all_positions"):
+                try:
+                    result = broker.exit_all_positions()
+                    st.success(f"Square-off order sent for all open positions: {result}")
+                except Exception as exc:
+                    st.error(f"Close-all failed: {exc}")
+            else:
+                st.warning("No live broker connected — no positions could be closed.")
             st.session_state.bot_status = "STOPPED"
 
     if cancel_orders_clicked:
@@ -517,13 +559,9 @@ with tab_live:
             st.error(f"❌ {get_market_hours_status()} — NSE trading is allowed between 9:15 AM and 3:20 PM only.")
         else:
             try:
-                from broker_factory import create_broker
-                broker = create_broker(
-                    broker_type=st.session_state.config.get("broker", "zerodha_kite"),
-                    api_key=runtime_config.get("api_key", ""),
-                    api_secret=runtime_config.get("api_secret", ""),
-                    access_token=runtime_config.get("access_token", ""),
-                )
+                broker = get_broker()
+                if broker is None:
+                    raise RuntimeError("Broker disconnected")
 
                 # =====================================================================
                 # SECTION 1: SIGNAL-DRIVEN ENTRY (same filters as Paper Trading)
@@ -545,11 +583,11 @@ with tab_live:
                     live_watchlist = [s.strip() for s in live_watchlist_input.split(",") if s.strip()]
                     params = get_strategy_params()
                     try:
-                        index_df = data_feed.get_historical(data_feed.NIFTY50_SYMBOL, interval=live_tf)
+                        index_df = data_feed.get_historical(data_feed.NIFTY50_SYMBOL, interval=live_tf, broker=broker)
                         live_results = []
                         for sym in live_watchlist:
                             try:
-                                df = data_feed.get_historical(sym, interval=live_tf)
+                                df = data_feed.get_historical(sym, interval=live_tf, broker=broker)
                                 if df.empty:
                                     continue
                                 sig_df = generate_signals(df, params, index_df)
@@ -609,7 +647,7 @@ with tab_live:
                                             qty=qty,
                                             trigger_price=s["stop_loss"],
                                         )
-                                        st.info(f"✅ GTT stop-loss placed at ₹{s['stop_loss']:.2f} | GTT ID: {gtt_result}")
+                                        st.info(f"✅ GTT stop-loss placed at ₹{s['stop_loss']:.2f} | GTT ID: {getattr(gtt_result, 'gtt_id', gtt_result)}")
                                     except Exception as gtt_err:
                                         st.warning(f"⚠️ GTT placement failed (manual safety needed): {gtt_err}")
                                     
@@ -662,7 +700,7 @@ with tab_live:
                                 qty=int(manual_qty),
                                 trigger_price=manual_sl,
                             )
-                            st.info(f"✅ GTT stop-loss placed at ₹{manual_sl:.2f} | GTT ID: {gtt_result}")
+                            st.info(f"✅ GTT stop-loss placed at ₹{manual_sl:.2f} | GTT ID: {getattr(gtt_result, 'gtt_id', gtt_result)}")
                         except Exception as gtt_err:
                             st.warning(f"⚠️ GTT placement failed: {gtt_err}")
                         

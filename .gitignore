@@ -8,3 +8,11 @@ __pycache__/
 .env.*
 .vscode/
 .DS_Store
+
+# Credentials and secrets — never commit
+config.json
+config.local.json
+
+# Broker scrip-master caches — regenerated on demand by broker_dhan.py
+dhan_security_list.csv
+dhan_security_list-fno.csv

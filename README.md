@@ -38,21 +38,21 @@ running from your terminal — closing the browser tab doesn't stop it; press
 ## 3. Where to put your broker API key
 
 Go to the **🔑 Settings / API** tab inside the app. That's where you paste
-your API Key / API Secret, and where the daily login flow (described in
-`broker_kite.py`) walks you through generating an access token. Credentials
-are saved only to a local `config.json` in this folder (already excluded via
+your Dhan client ID / API secret, and where the daily login flow (described in
+`broker_dhan.py`) walks you through generating an access token. Credentials
+are saved only to a local `config.json` in this folder (excluded via
 `.gitignore` — never commit it or share it).
 
-You don't have an API yet — to get one for Zerodha Kite Connect:
-1. Sign up at https://developers.kite.trade (separate paid subscription,
-   ~₹2,000/month, on top of your normal Zerodha account).
-2. Create an app there to get your `api_key` and `api_secret`.
-3. Paste them into the Settings tab.
+To trade live you need a Dhan trading account and DhanHQ API access:
+1. Create/get your Dhan client ID at https://dhan.co
+2. Enable the DhanHQ API (Data-API subscription for historical/intraday
+   market data endpoints) and register your static IP with Dhan.
+3. Paste your client ID + app secret into the Settings tab and complete the
+   daily login flow to generate an access token (tokens expire daily).
 
-If you use a different broker (Upstox, Fyers, Angel One...), the app's
-architecture isolates all broker-specific code in `broker_kite.py` — that
-file can be swapped/extended for another broker's SDK without touching the
-strategy, backtester, or UI.
+The app's multi-broker architecture isolates all broker-specific code in
+`broker_dhan.py` — that file can be swapped/extended for another broker's SDK
+without touching the strategy, backtester, or UI.
 
 ## 4. The strategy: Adaptive Trend-Pullback Swing Strategy
 
@@ -100,24 +100,26 @@ until you've watched it behave correctly:
 2. Run Paper Trading for at least a couple of weeks. Confirm signals,
    stop-losses, and targets behave the way you expect.
 3. Start live with the smallest position size your broker allows.
-4. Always also place a server-side GTT stop-loss (see
-   `KiteBroker.place_gtt_stop_loss` in `broker_kite.py`) so your position is
-   protected even if your laptop, internet, or this app goes down — this is
-   not automatic yet in the UI and is worth wiring into your workflow.
+4. The Live Trading tab automatically places a server-side GTT stop-loss
+   (Dhan Forever Order, see `DhanBroker.place_gtt_stop_loss` in
+   `broker_dhan.py`) after every entry, so your position is protected even if
+   your laptop, internet, or this app goes down.
 5. Re-check SEBI's and your broker's current algo-trading compliance
    requirements before scaling up order frequency — these rules have
    changed more than once recently.
 
 ## 7. Known limitations / what to extend next
 
-- Only Zerodha Kite Connect is wired up; other brokers need a new wrapper
-  module following `broker_kite.py`'s pattern.
+- Dhan is the currently wired broker (`broker_dhan.py`); the app can be
+  extended to other brokers via `broker_factory.py`.
 - Paper/live price refresh is manual (button-triggered), not a background
   auto-refresh loop — intentional for a first version, but worth automating
   later with `streamlit-autorefresh` or a separate polling process.
 - The backtester is a single-position-at-a-time, single-symbol engine. It
   does not model portfolio-level effects across multiple simultaneous
   positions.
-- No automatic GTT stop-loss placement on live entry yet — currently a
-  manual extra step (function is ready in `broker_kite.py`, just not called
-  automatically from the Live Trading tab).
+- yfinance is used as the fallback market-data source when no Dhan broker is
+  connected; it is delayed and unsuitable as the source of truth for live
+  order execution (Dhan's own APIs are used once a broker is connected).
+- The Dhan symbol→security-id map (`dhan_security_list.csv`) is downloaded
+  and cached on demand by `broker_dhan.py`; keep it fresh before market open.

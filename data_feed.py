@@ -10,7 +10,7 @@ Market data access layer.
 
 - IMPORTANT: yfinance data is delayed and NOT suitable as the source of
   truth for live order execution. Once a broker is connected (see
-  broker_kite.py), live trading uses the broker's own LTP/quote API for
+  broker_dhan.py), live trading uses the broker's own LTP/quote API for
   the actual traded price. yfinance is still used in live mode only to
   compute indicators (trend/momentum/etc.) off recent history.
 """
@@ -37,7 +37,12 @@ def to_yahoo_symbol(nse_symbol: str) -> str:
     return f"{nse_symbol}.NS"
 
 
-def get_historical(symbol: str, interval: str = "1d", period: str = None) -> pd.DataFrame:
+def get_historical(
+    symbol: str,
+    interval: str = "1d",
+    period: str = None,
+    broker=None,
+) -> pd.DataFrame:
     """
     Fetch historical OHLCV data.
 
@@ -45,7 +50,18 @@ def get_historical(symbol: str, interval: str = "1d", period: str = None) -> pd.
     interval: one of "15m", "1h", "1d", "1wk"
     period:   yfinance period string (e.g. "1y"); defaults to the max
               sensible lookback for the given interval
+    broker:   optional connected BrokerInterface (e.g. a DhanBroker). When
+              provided, its real-time Historical Data API is tried first and
+              yfinance is used only as a fallback.
     """
+    if broker is not None and hasattr(broker, "get_historical"):
+        try:
+            df = broker.get_historical(symbol, interval=interval, period=period)
+            if df is not None and not df.empty:
+                return df
+        except Exception:
+            pass
+
     yahoo_symbol = to_yahoo_symbol(symbol)
     if period is None:
         period = INTERVAL_PERIOD_MAP.get(interval, "1y")
@@ -78,11 +94,18 @@ def get_historical(symbol: str, interval: str = "1d", period: str = None) -> pd.
     return df.dropna()
 
 
-def get_latest_price(symbol: str) -> float:
+def get_latest_price(symbol: str, broker=None) -> float:
     """
-    Best-effort 'current' price using yfinance (delayed, demo/paper-trading
-    use only). For live trading, prefer broker_kite.KiteBroker.get_ltp().
+    Best-effort 'current' price. When a broker is provided, its live LTP feed
+    is used (real-time); otherwise falls back to yfinance (delayed, paper/
+    demo use only).
     """
+    if broker is not None and hasattr(broker, "get_ltp"):
+        try:
+            return float(broker.get_ltp(symbol))
+        except Exception:
+            pass
+
     yahoo_symbol = to_yahoo_symbol(symbol)
     data = yf.Ticker(yahoo_symbol).history(period="1d", interval="1m")
     if data.empty:
