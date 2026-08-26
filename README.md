@@ -81,14 +81,22 @@ and the key risk numbers are also adjustable live from the app's sidebar.
 - **📊 Strategy & Backtest** — pick a symbol + timeframe, run the strategy
   against historical data, see the equity curve, trade list, and metrics
   (win rate, total return, max drawdown, profit factor).
+- **🔍 Screener** — scan the Nifty 50 / Nifty 100 / F&O universe for BUY
+  signals using the same strategy filters, sorted by signal strength.
 - **📝 Paper Trading** — scans a watchlist for live signals using recent
-  data and lets you simulate taking/exiting trades with fake money. Nothing
-  here touches a real broker.
+  data and lets you simulate taking/exiting trades with fake money (positions,
+  stops/targets, P&L, trade log). Nothing here touches a real broker.
 - **💰 Live Trading** — places REAL orders through your connected broker.
   Locked until (a) a broker is connected in Settings, and (b) you tick an
   explicit risk-acknowledgement checkbox. Also respects the daily loss
-  kill-switch configured in the sidebar.
-- **🔑 Settings / API** — broker connection and credentials.
+  kill-switch configured in the sidebar. Every live entry places a server-side
+  GTT stop-loss (Dhan Forever Order).
+- **📋 Orders** — full order lifecycle (pending/filled/rejected) and closed
+  trade history recorded by the `OrderManager`.
+- **🔔 Alerts** — configure Telegram notifications for order placement, stop
+  hits, bot status changes, and more.
+- **🔑 Settings / API** — broker connection and credentials (Dhan client ID +
+  app secret + daily access token).
 
 ## 6. Before you flip on Live Trading
 

@@ -11,6 +11,22 @@ Audited and fixed the Dhan order/scanning pipeline ahead of a Monday go-live.
 and the DhanHQ v2 docs (Authentication, Orders, Annexure, Market Quote,
 Forever Order, Funds & Margin, Historical Data, Portfolio/Positions).
 
+## Single source of truth
+
+**`app.py` is the one app to run** (`streamlit run app.py`). `app_final.py`,
+`app_backup.py` and `app_integrated.py` are superseded snapshots and are kept
+only for reference. The final `app.py` is the audited, fixed app **plus** the
+enhanced features that existed in `app_final.py`:
+
+- Screener tab (Nifty 50 / Nifty 100 / F&O universes + presets), now wired to
+  the connected broker's market data instead of yfinance.
+- Orders tab (OrderManager lifecycle + trade history); live entries now
+  recorded into the OrderManager and fire notifications.
+- Alerts tab (Telegram configuration + recent notifications).
+- Sidebar advanced strategy filters (ADX threshold, min volume ratio).
+- All previous audit fixes preserved (GTT Forever Order, kill-switch latch,
+  broker-first data, CLOSE ALL, daily risk reset, security-list handling).
+
 ## Root causes found and fixed
 
 ### 1. Security resolution was broken (would reject every symbol)

@@ -35,6 +35,10 @@ from risk_manager import (
     ConsecutiveLossTracker, TradeAuditLog, is_market_open, get_market_hours_status
 )
 
+from order_manager import OrderManager, OrderStatus
+from notifications import NotificationManager, NotificationLevel
+from screener import StockScreener, StockUniverse
+
 st.set_page_config(page_title="NSE Swing Trading Assistant", layout="wide")
 
 # ---------------------------------------------------------------------------
@@ -102,11 +106,26 @@ if "bot_status" not in st.session_state:
 if "bot_pause_reason" not in st.session_state:
     st.session_state.bot_pause_reason = ""
 
+if "order_manager" not in st.session_state:
+    st.session_state.order_manager = OrderManager()
+
+if "notification_manager" not in st.session_state:
+    st.session_state.notification_manager = NotificationManager()
+
+if "screener" not in st.session_state:
+    st.session_state.screener = StockScreener()
+    st.session_state.stock_universe = StockUniverse()
+
+if "latest_scan_results" not in st.session_state:
+    st.session_state.latest_scan_results = []
+
 
 def get_strategy_params() -> StrategyParams:
     s = st.session_state
     return StrategyParams(
         min_risk_reward=s.config["min_risk_reward"],
+        adx_threshold=float(s.config.get("adx_threshold", 25.0)),
+        volume_ratio_min=float(s.config.get("volume_ratio_min", 1.1)),
     )
 
 
@@ -126,6 +145,44 @@ def get_broker():
         api_secret=runtime_config.get("api_secret", ""),
         access_token=runtime_config.get("access_token", ""),
     )
+
+
+def record_live_order(
+    broker_order_id: str,
+    symbol: str,
+    qty: int,
+    transaction_type: str = "BUY",
+    order_type: str = "MARKET",
+    price: float = None,
+    gtt_id: str = None,
+    is_entry: bool = True,
+):
+    """Record an executed order in the OrderManager and fire a notification."""
+    om = st.session_state.order_manager
+    order = om.create_order(
+        symbol=symbol,
+        qty=qty,
+        transaction_type=transaction_type,
+        order_type=order_type,
+        price=price,
+        is_entry=is_entry,
+    )
+    om.submit_order(order.order_id, broker_order_id)
+    om.update_order_status(
+        order.order_id,
+        "ACKNOWLEDGED",
+        filled_qty=qty if str(order_type).upper() == "MARKET" else 0,
+        average_price=float(price or 0.0),
+    )
+    if gtt_id:
+        om.orders[order.order_id].gtt_id = str(gtt_id)
+    try:
+        st.session_state.notification_manager.notify_order_placed(
+            symbol, qty, float(price or 0.0), order_type, broker_order_id
+        )
+    except Exception:
+        pass
+    return order
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +205,15 @@ with st.sidebar:
         "Minimum risk-reward to take a trade", 1.0, 4.0,
         float(st.session_state.config["min_risk_reward"]), 0.25,
     )
+    with st.expander("⚙️ Advanced strategy filters"):
+        st.session_state.config["adx_threshold"] = st.slider(
+            "ADX trend-strength threshold", 15.0, 40.0,
+            float(st.session_state.config.get("adx_threshold", 25.0)), 1.0,
+        )
+        st.session_state.config["volume_ratio_min"] = st.slider(
+            "Min volume ratio vs 20-bar avg", 1.0, 3.0,
+            float(st.session_state.config.get("volume_ratio_min", 1.1)), 0.1,
+        )
     if st.button("💾 Save settings"):
         cfg.save_config(st.session_state.config)
         st.session_state.daily_loss_tracker.capital = st.session_state.config["capital"]
@@ -212,8 +278,16 @@ st.info(
     f"Current execution mode: {mode_label}. The same broker credentials from Settings are reused for both paper and live trading."
 )
 
-tab_backtest, tab_paper, tab_live, tab_settings = st.tabs(
-    ["📊 Strategy & Backtest", "📝 Paper Trading", "💰 Live Trading", "🔑 Settings / API"]
+tab_backtest, tab_screener, tab_paper, tab_live, tab_orders, tab_alerts, tab_settings = st.tabs(
+    [
+        "📊 Strategy & Backtest",
+        "🔍 Screener",
+        "📝 Paper Trading",
+        "💰 Live Trading",
+        "📋 Orders",
+        "🔔 Alerts",
+        "🔑 Settings / API",
+    ]
 )
 
 # ---------------------------------------------------------------------------
@@ -281,6 +355,44 @@ with tab_backtest:
                     st.dataframe(trades_to_dataframe(result["trades"]), use_container_width=True)
             except Exception as e:
                 st.error(f"Backtest failed: {e}")
+
+# ---------------------------------------------------------------------------
+# TAB 1.5: Screener
+# ---------------------------------------------------------------------------
+with tab_screener:
+    st.subheader("🔍 Stock Screener")
+    st.caption("Scans a whole universe for BUY signals using the same strategy filters as the other tabs.")
+
+    sc1, sc2, sc3 = st.columns(3)
+    universe = sc1.selectbox("Universe", ["Nifty 50", "Nifty 100", "F&O"], key="sc_universe")
+    preset = sc2.selectbox("Preset", ["moderate", "conservative", "aggressive"], key="sc_preset")
+    sc_tf = sc3.selectbox("Timeframe", ["15m", "1h", "1d"], index=2, key="sc_tf")
+
+    universe_lookup = {
+        "Nifty 50": "get_nifty_50",
+        "Nifty 100": "get_nifty_100",
+        "F&O": "get_fno_stocks",
+    }
+
+    if st.button("🔍 Scan Now", type="primary"):
+        universe_syms = getattr(st.session_state.stock_universe, universe_lookup[universe])()
+        st.session_state.screener.broker = get_broker()
+        with st.spinner(f"Scanning {len(universe_syms)} stocks..."):
+            try:
+                results = st.session_state.screener.scan(
+                    universe_syms, sc_tf, preset, use_relative_strength=False, max_workers=3
+                )
+                st.session_state.latest_scan_results = results
+                st.success(f"Scan complete: {len(results)} BUY signal(s) found.")
+            except Exception as exc:
+                st.error(f"Scan failed: {exc}")
+                st.session_state.latest_scan_results = []
+
+    if st.session_state.latest_scan_results:
+        scan_df = st.session_state.screener.results_to_dataframe(st.session_state.latest_scan_results)
+        st.dataframe(scan_df, use_container_width=True, height=400)
+    else:
+        st.caption("No scan results yet — click 'Scan Now'.")
 
 # ---------------------------------------------------------------------------
 # TAB 2: Paper Trading
@@ -364,9 +476,12 @@ with tab_paper:
         if closed:
             st.info(f"Auto-closed: {', '.join(closed)}")
 
-    c1, c2 = st.columns(2)
-    c1.metric("Cash", f"₹{pf.cash:,.2f}")
-    c2.metric("Total equity", f"₹{pf.total_equity(current_prices):,.2f}")
+    p1, p2, p3, p4 = st.columns(4)
+    equity = pf.total_equity(current_prices)
+    p1.metric("Cash", f"₹{pf.cash:,.2f}")
+    p2.metric("Total equity", f"₹{equity:,.2f}")
+    p3.metric("Return", f"{(equity - pf.starting_cash) / pf.starting_cash * 100:+.2f}%")
+    p4.metric("Trades", len(pf.trade_log))
 
     st.write("**Open positions**")
     st.dataframe(pf.positions_df(current_prices), use_container_width=True)
@@ -522,6 +637,12 @@ with tab_live:
                 try:
                     result = broker.exit_all_positions()
                     st.success(f"Square-off order sent for all open positions: {result}")
+                    try:
+                        st.session_state.notification_manager.notify_bot_status_change(
+                            "STOPPED", reason="Emergency close-all triggered"
+                        )
+                    except Exception:
+                        pass
                 except Exception as exc:
                     st.error(f"Close-all failed: {exc}")
             else:
@@ -639,18 +760,27 @@ with tab_live:
                                         product="CNC",
                                     )
                                     st.success(f"BUY order placed: {s['symbol']} × {qty} | Order ID: {order_id}")
-                                    
+
                                     # Step 2: Place GTT stop-loss
+                                    gtt_id = None
                                     try:
                                         gtt_result = broker.place_gtt_stop_loss(
                                             symbol=s["symbol"],
                                             qty=qty,
                                             trigger_price=s["stop_loss"],
                                         )
-                                        st.info(f"✅ GTT stop-loss placed at ₹{s['stop_loss']:.2f} | GTT ID: {getattr(gtt_result, 'gtt_id', gtt_result)}")
+                                        gtt_id = getattr(gtt_result, "gtt_id", None)
+                                        st.info(f"✅ GTT stop-loss placed at ₹{s['stop_loss']:.2f} | GTT ID: {gtt_id}")
                                     except Exception as gtt_err:
                                         st.warning(f"⚠️ GTT placement failed (manual safety needed): {gtt_err}")
-                                    
+
+                                    # Record in OrderManager + notify
+                                    record_live_order(
+                                        order_id, s["symbol"], qty,
+                                        transaction_type="BUY", order_type="MARKET",
+                                        price=s["price"], gtt_id=gtt_id,
+                                    )
+
                                     # Log to session
                                     st.session_state.last_live_trade = {
                                         "symbol": s["symbol"],
@@ -659,6 +789,7 @@ with tab_live:
                                         "stop": s["stop_loss"],
                                         "target": s["target"],
                                         "order_id": order_id,
+                                        "gtt_id": gtt_id,
                                     }
                             except Exception as e:
                                 st.error(f"Order failed: {e}")
@@ -694,15 +825,24 @@ with tab_live:
                         st.success(f"LIMIT BUY order placed: {manual_symbol} × {int(manual_qty)} @ ₹{manual_entry:.2f} | Order ID: {order_id}")
                         
                         # Place GTT stop-loss
+                        gtt_id = None
                         try:
                             gtt_result = broker.place_gtt_stop_loss(
                                 symbol=manual_symbol,
                                 qty=int(manual_qty),
                                 trigger_price=manual_sl,
                             )
-                            st.info(f"✅ GTT stop-loss placed at ₹{manual_sl:.2f} | GTT ID: {getattr(gtt_result, 'gtt_id', gtt_result)}")
+                            gtt_id = getattr(gtt_result, "gtt_id", None)
+                            st.info(f"✅ GTT stop-loss placed at ₹{manual_sl:.2f} | GTT ID: {gtt_id}")
                         except Exception as gtt_err:
                             st.warning(f"⚠️ GTT placement failed: {gtt_err}")
+                        
+                        # Record in OrderManager + notify
+                        record_live_order(
+                            order_id, manual_symbol, int(manual_qty),
+                            transaction_type="BUY", order_type="LIMIT",
+                            price=float(manual_entry), gtt_id=gtt_id,
+                        )
                         
                         st.session_state.last_live_trade = {
                             "symbol": manual_symbol,
@@ -711,6 +851,7 @@ with tab_live:
                             "stop": manual_sl,
                             "target": manual_target,
                             "order_id": order_id,
+                            "gtt_id": gtt_id,
                         }
                     except Exception as e:
                         st.error(f"Order failed: {e}")
@@ -786,9 +927,102 @@ with tab_live:
                     st.caption("No actions logged yet.")
 
             except ImportError:
-                st.error("kiteconnect package not installed. Run: pip install kiteconnect")
+                st.error("Broker SDK not installed. Run: pip install dhanhq")
             except Exception as e:
                 st.error(f"Broker error: {e}")
+
+# ---------------------------------------------------------------------------
+# TAB 3.5: Order Management
+# ---------------------------------------------------------------------------
+with tab_orders:
+    st.subheader("📋 Order Management")
+    st.caption("Orders placed from the Live Trading tab are recorded here with their full lifecycle.")
+
+    om = st.session_state.order_manager
+    all_orders = list(om.orders.values())
+
+    oc1, oc2, oc3, oc4 = st.columns(4)
+    oc1.metric("Pending", len(om.get_pending_orders()))
+    oc2.metric("Filled", len([o for o in all_orders if o.status == OrderStatus.FILLED]))
+    oc3.metric("Rejected", len([o for o in all_orders if o.status == OrderStatus.REJECTED]))
+    oc4.metric("Total", len(all_orders))
+
+    if all_orders:
+        order_rows = []
+        for o in sorted(all_orders, key=lambda x: x.created_at, reverse=True):
+            order_rows.append({
+                "Symbol": o.symbol,
+                "Side": o.transaction_type.value,
+                "Type": o.order_type.value,
+                "Qty": o.qty,
+                "Filled": o.filled_qty,
+                "Status": o.status.value,
+                "Price": f"₹{o.average_price:.2f}" if o.average_price > 0 else "-",
+                "GTT ID": o.gtt_id or "-",
+                "Time": o.created_at[:19],
+            })
+        st.dataframe(pd.DataFrame(order_rows), use_container_width=True, height=400)
+    else:
+        st.info("No orders yet — orders placed from the Live Trading tab will appear here.")
+
+    st.divider()
+    st.subheader("📈 Trade History")
+    trades = om.get_trade_history()
+    if trades:
+        trade_rows = []
+        for t in trades:
+            trade_rows.append({
+                "Symbol": t.symbol,
+                "Entry": f"₹{t.entry_price:.2f}",
+                "Qty": t.entry_qty,
+                "Exit": f"₹{t.exit_price:.2f}" if t.exit_price else "-",
+                "P&L": f"₹{t.realized_pnl:,.2f}",
+                "P&L%": f"{t.realized_pnl_pct:.2f}%",
+                "Exit Reason": t.exit_reason or "-",
+            })
+        st.dataframe(pd.DataFrame(trade_rows), use_container_width=True)
+    else:
+        st.info("No closed trades yet.")
+
+# ---------------------------------------------------------------------------
+# TAB 3.75: Notifications / Alerts
+# ---------------------------------------------------------------------------
+with tab_alerts:
+    st.subheader("🔔 Notifications & Alerts")
+    st.caption("Get alerted when orders are placed, stops hit, or the bot status changes.")
+
+    nm = st.session_state.notification_manager
+
+    with st.expander("📱 Telegram", expanded=True):
+        tg_enabled = st.checkbox("Enable Telegram", value=nm.config.get("telegram", {}).get("enabled", False), key="tg_enabled")
+        if tg_enabled:
+            tg_token = st.text_input("Bot token", type="password", key="tg_token")
+            tg_chat = st.text_input("Chat ID", key="tg_chat")
+            c1, c2 = st.columns(2)
+            if c1.button("💾 Save Telegram"):
+                try:
+                    nm.enable_telegram(tg_token, tg_chat)
+                    st.success("Telegram settings saved.")
+                except Exception as exc:
+                    st.error(f"Could not save Telegram settings: {exc}")
+            if c2.button("🔔 Send test alert"):
+                try:
+                    nm.send_notification("Test alert", "If you see this, Telegram is working.", NotificationLevel.INFO)
+                    st.success("Test notification sent.")
+                except Exception as exc:
+                    st.error(f"Test failed: {exc}")
+
+    st.divider()
+    st.subheader("🕒 Recent notifications")
+    recent = nm.get_recent_notifications(10)
+    if recent:
+        for n in recent:
+            ts = getattr(n, "timestamp", "") or ""
+            st.markdown(f"**{n.title}** — {ts[:19]}")
+            st.caption(getattr(n, "message", ""))
+            st.divider()
+    else:
+        st.caption("No notifications yet.")
 
 # ---------------------------------------------------------------------------
 # TAB 4: Settings / API
